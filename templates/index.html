@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トレーニング共有アプリ</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 400px;
+            background: white;
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        h1, h2, h3 { text-align: center; color: #2c3e50; margin-bottom: 15px; }
+        h1 { font-size: 1.8em; }
+        h2 { font-size: 1.2em; border-left: 5px solid #2ecc71; padding-left: 10px; margin-top: 30px;}
+        hr { border: 0; border-top: 1px solid #eee; margin: 20px 0; }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            transition: opacity 0.2s;
+        }
+        button:active { opacity: 0.8; }
+
+        #emailLoginButton { background-color: #3498db; }
+        #emailRegisterButton { background-color: #95a5a6; }
+        #logoutButton { background-color: #e74c3c; margin-top: 10px;}
+        #updateProfileButton { background-color: #2c3e50; margin-top: 5px; font-size: 0.9em; padding: 8px;}
+        
+        #foodForm button { background-color: #f1c40f; color: #333; }
+        #startButton { background-color: #2ecc71; }
+        #stopButton { background-color: #e74c3c; }
+
+        #authContainer { background-color: #eef2f3; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        
+        #timer { font-size: 3.5em; font-family: 'Courier New', monospace; text-align: center; margin: 20px 0; color: #2c3e50; }
+
+        #timelineList { list-style: none; padding: 0; }
+        #timelineList li { background: #fff; border-bottom: 1px solid #eee; padding: 15px 10px; }
+        strong { color: #2ecc71; }
+        .user-name { color: #3498db; font-weight: bold; font-size: 0.9em; margin-bottom: 4px;}
+        small { color: #888; display: block; margin-top: 5px; font-size: 0.85em;}
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="authContainer">
+            <div id="loginForm">
+                <h3>ログイン / 新規登録</h3>
+                <input type="email" id="emailInput" placeholder="メールアドレス">
+                <input type="password" id="passwordInput" placeholder="パスワード">
+                <button id="emailLoginButton">ログイン</button>
+                <button id="emailRegisterButton">新規登録</button>
+            </div>
+
+            <div id="userInfo" style="display: none;">
+                <p>ようこそ、<span id="userName" style="font-weight:bold; font-size:1.2em;"></span> さん！</p>
+                
+                <details style="margin-bottom: 10px; cursor: pointer;">
+                    <summary style="font-size: 0.9em; color: #555;">ニックネームを変更する</summary>
+                    <input type="text" id="nicknameInput" placeholder="新しいニックネーム">
+                    <button id="updateProfileButton">変更を保存</button>
+                </details>
+
+                <button id="logoutButton">ログアウト</button>
+            </div>
+        </div>
+
+        <hr>
+
+        <h2>食事の記録 🍽️</h2>
+        <form id="foodForm">
+            <p>食事の写真をアップロードしてください</p>
+            <input type="file" id="foodImage" accept="image/*">
+            <button type="submit">送信</button>
+        </form>
+        <div id="foodResult" style="margin-top:10px;"></div>
+
+        <hr>
+
+        <h2>みんなの活動タイムライン</h2>
+        <ul id="timelineList">
+            <li>読み込み中...</li>
+        </ul>
+
+        <hr>
+
+        <h1>トレーニング</h1>
+        <div id="timer">00:00:00</div>
+        <div>
+            <button id="startButton">開始</button>
+            <button id="stopButton">終了</button>
+        </div>
+        <div id="result" style="margin-top:10px;"></div>
+    </div>
+
+    <script>
+        // 1. 変数準備
+        const loginForm = document.getElementById('loginForm');
+        const emailInput = document.getElementById('emailInput');
+        const passwordInput = document.getElementById('passwordInput');
+        const emailLoginButton = document.getElementById('emailLoginButton');
+        const emailRegisterButton = document.getElementById('emailRegisterButton');
+        
+        const userInfo = document.getElementById('userInfo');
+        const userName = document.getElementById('userName');
+        const logoutButton = document.getElementById('logoutButton');
+        
+        // ★追加: ニックネーム用
+        const nicknameInput = document.getElementById('nicknameInput');
+        const updateProfileButton = document.getElementById('updateProfileButton');
+
+        const foodForm = document.getElementById('foodForm');
+        const foodImageInput = document.getElementById('foodImage');
+        const foodResultElement = document.getElementById('foodResult');
+        const timelineList = document.getElementById('timelineList');
+        const timerElement = document.getElementById('timer');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const resultElement = document.getElementById('result');
+
+        // 2. Firebase設定 (★ここにあなたの設定を上書きしてください！)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBlSmhMCPEy9pQ5dcDQf7Nbfg-QLol0Y1s",
+            authDomain: "muscle-health-share-app.firebaseapp.com",
+            projectId: "muscle-health-share-app",
+            storageBucket: "muscle-health-share-app.firebasestorage.app",
+            messagingSenderId: "943104458821",
+            appId: "1:943104458821:web:81200c236e0e33c394632c",
+            measurementId: "G-WTF627DY4K"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db_js = firebase.firestore();
+
+        // 3. 認証処理
+        emailRegisterButton.addEventListener('click', () => {
+            const email = emailInput.value; const password = passwordInput.value;
+            if(!email || !password) return alert('入力してください');
+            auth.createUserWithEmailAndPassword(email, password)
+                .then(() => console.log('登録成功')).catch(e => alert(e.message));
+        });
+
+        emailLoginButton.addEventListener('click', () => {
+            const email = emailInput.value; const password = passwordInput.value;
+            if(!email || !password) return alert('入力してください');
+            auth.signInWithEmailAndPassword(email, password)
+                .then(() => console.log('ログイン成功')).catch(e => alert(e.message));
+        });
+
+        logoutButton.addEventListener('click', () => auth.signOut());
+
+        // ★追加: ニックネーム更新処理
+        updateProfileButton.addEventListener('click', () => {
+            const newName = nicknameInput.value;
+            const user = auth.currentUser;
+            if (user && newName) {
+                user.updateProfile({ displayName: newName })
+                    .then(() => {
+                        alert('ニックネームを更新しました！');
+                        userName.textContent = newName; // 画面の表示も更新
+                    })
+                    .catch((error) => console.error(error));
+            }
+        });
+
+        // ログイン状態監視
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                loginForm.style.display = 'none';
+                userInfo.style.display = 'block';
+                // ★名前があれば名前を、なければメールアドレスを表示
+                userName.textContent = user.displayName || user.email;
+                loadActivities();
+            } else {
+                loginForm.style.display = 'block';
+                userInfo.style.display = 'none';
+                timelineList.innerHTML = '<li>ログインすると履歴が見れます</li>';
+            }
+        });
+
+        // 4. タイムライン読み込み
+        async function loadActivities() {
+            try {
+                const response = await fetch('/get_activities');
+                const activities = await response.json();
+                timelineList.innerHTML = ''; 
+                activities.forEach(activity => {
+                    // ★名前がないデータは「名無し」と表示
+                    const name = activity.user_name || '名無しさん';
+                    const li = document.createElement('li');
+                    
+                    // ★名前を表示するようにHTMLを変更
+                    let content = `<div class="user-name">${name}</div>`;
+                    
+                    if (activity.type === 'food') {
+                        content += `<strong>【食事】</strong> ${activity.calories} / ${activity.pfc}`;
+                    } else if (activity.type === 'training') {
+                        content += `<strong>【トレーニング】</strong> ${activity.duration}`;
+                    }
+                    content += `<small>${activity.timestamp_str}</small>`;
+                    
+                    li.innerHTML = content;
+                    timelineList.appendChild(li);
+                });
+            } catch (error) { console.error(error); }
+        }
+
+        // 5. 食事記録
+        foodForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = foodImageInput.files[0];
+            if (!file) return;
+            const user = auth.currentUser; // 現在のユーザーを取得
+            if (!user) return alert('ログインしてください');
+
+            foodResultElement.textContent = 'AI分析中...';
+            const formData = new FormData();
+            formData.append('image', file);
+            // ★現在のニックネーム(なければメアド)を送る
+            formData.append('user_name', user.displayName || user.email);
+
+            try {
+                const res = await fetch('/analyze', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (res.ok) {
+                    foodResultElement.innerHTML = `カロリー: ${data.calories}<br>PFC: ${data.pfc}`;
+                    loadActivities();
+                } else { foodResultElement.textContent = 'エラー: ' + data.error; }
+            } catch (err) { console.error(err); }
+        });
+
+        // 6. タイマー
+        let startTime, timerInterval = null;
+        startButton.addEventListener('click', () => {
+            if (timerInterval) return;
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                timerElement.textContent = formatTime(Date.now() - startTime);
+            }, 1000);
+            resultElement.textContent = '';
+        });
+
+        stopButton.addEventListener('click', async () => {
+            if (!timerInterval) return;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            const formattedTime = formatTime(Date.now() - startTime);
+            
+            const user = auth.currentUser;
+            if (!user) return alert('ログインしてください');
+
+            try {
+                await fetch('/log_training', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        'duration': formattedTime,
+                        'user_name': user.displayName || user.email // ★名前を送る
+                    })
+                });
+                loadActivities();
+            } catch (err) { console.error(err); }
+            resultElement.textContent = `お疲れ様！ 時間: ${formattedTime}`;
+        });
+
+        function formatTime(ms) {
+            const s = Math.floor(ms / 1000) % 60;
+            const m = Math.floor(ms / 1000 / 60) % 60;
+            const h = Math.floor(ms / 1000 / 3600);
+            return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        }
+    </script>
+</body>
+</html>
