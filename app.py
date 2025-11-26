@@ -2,12 +2,12 @@ import os
 import base64
 import json
 import datetime
-import io # 追加
+import io
 from flask import Flask, render_template, request, jsonify
 from openai import OpenAI
 import firebase_admin
 from firebase_admin import credentials, firestore
-from PIL import Image # 追加：画像処理用
+from PIL import Image
 
 # --- OpenAI APIキーの設定 ---
 try:
@@ -36,7 +36,7 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
-# --- 1. 食事画像の分析と記録（軽量化版） ---
+# --- 1. 食事画像の分析と記録 ---
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
     if not client or not db: return jsonify({'error': 'サーバー設定エラー'}), 500
@@ -46,25 +46,18 @@ def analyze_image():
     if file.filename == '': return jsonify({'error': 'ファイル未選択'}), 400
 
     user_name = request.form.get('user_name', '名無しさん')
+    # ★追加: メモを受け取る
+    memo = request.form.get('memo', '')
 
     try:
-        # ★★★ 画像を縮小する処理を追加 ★★★
-        # 1. 画像を開く
+        # 画像縮小処理
         img = Image.open(file)
-        
-        # 2. スマホの写真は巨大なので、最大800x800ピクセルに縮小する
         img.thumbnail((800, 800))
-        
-        # 3. 縮小した画像をメモリ上に保存
         buffer = io.BytesIO()
-        # 元がPNGならPNG、それ以外(JPEGなど)はJPEGとして保存して容量削減
         fmt = img.format if img.format == 'PNG' else 'JPEG'
         img.save(buffer, format=fmt)
-        
-        # 4. これをBase64にする
         image_bytes = buffer.getvalue()
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        # ★★★ ここまで ★★★
 
     except Exception as e:
         return jsonify({'error': f'画像処理エラー: {str(e)}'}), 400
@@ -95,6 +88,7 @@ def analyze_image():
         db.collection('activities').add({
             'type': 'food',
             'user_name': user_name,
+            'memo': memo, # ★追加: メモを保存
             'calories': ai_data.get('calories', '不明'),
             'pfc': ai_data.get('pfc', '不明'),
             'timestamp': datetime.datetime.now(datetime.timezone.utc)
@@ -114,11 +108,15 @@ def log_training():
         data = request.json
         duration = data.get('duration')
         user_name = data.get('user_name', '名無しさん')
+        # ★追加: メモを受け取る
+        memo = data.get('memo', '')
+
         if not duration: return jsonify({'error': '時間なし'}), 400
 
         db.collection('activities').add({
             'type': 'training',
             'user_name': user_name,
+            'memo': memo, # ★追加: メモを保存
             'duration': duration,
             'timestamp': datetime.datetime.now(datetime.timezone.utc)
         })
@@ -142,6 +140,11 @@ def get_activities():
             if 'timestamp' in data and data['timestamp']:
                 jst_timestamp = data['timestamp'].astimezone(datetime.timezone(datetime.timedelta(hours=9)))
                 data['timestamp_str'] = jst_timestamp.strftime('%Y年%m月%d日 %H:%M')
+            
+            # メモがない古いデータのために空文字を入れておく
+            if 'memo' not in data:
+                data['memo'] = ''
+
             activities.append(data)
         return jsonify(activities)
     except Exception as e:
