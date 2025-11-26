@@ -36,7 +36,7 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
-# --- 1. 食事画像の分析と記録 ---
+# --- 1. 食事画像の分析と記録（画像あり） ---
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
     if not client or not db: return jsonify({'error': 'サーバー設定エラー'}), 500
@@ -46,11 +46,9 @@ def analyze_image():
     if file.filename == '': return jsonify({'error': 'ファイル未選択'}), 400
 
     user_name = request.form.get('user_name', '名無しさん')
-    # ★追加: メモを受け取る
     memo = request.form.get('memo', '')
 
     try:
-        # 画像縮小処理
         img = Image.open(file)
         img.thumbnail((800, 800))
         buffer = io.BytesIO()
@@ -58,7 +56,6 @@ def analyze_image():
         img.save(buffer, format=fmt)
         image_bytes = buffer.getvalue()
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
-
     except Exception as e:
         return jsonify({'error': f'画像処理エラー: {str(e)}'}), 400
 
@@ -88,7 +85,7 @@ def analyze_image():
         db.collection('activities').add({
             'type': 'food',
             'user_name': user_name,
-            'memo': memo, # ★追加: メモを保存
+            'memo': memo,
             'calories': ai_data.get('calories', '不明'),
             'pfc': ai_data.get('pfc', '不明'),
             'timestamp': datetime.datetime.now(datetime.timezone.utc)
@@ -100,6 +97,32 @@ def analyze_image():
         print(f"エラー: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# --- ★追加機能: テキストのみの食事記録（画像なし） ---
+@app.route('/log_food_text', methods=['POST'])
+def log_food_text():
+    if not db: return jsonify({'error': 'DBエラー'}), 500
+    try:
+        data = request.json
+        user_name = data.get('user_name', '名無しさん')
+        memo = data.get('memo', '')
+
+        if not memo: return jsonify({'error': 'メモが空です'}), 400
+
+        # 画像がないのでカロリーなどは「---」として保存
+        db.collection('activities').add({
+            'type': 'food',
+            'user_name': user_name,
+            'memo': memo,
+            'calories': '---', 
+            'pfc': '---',
+            'timestamp': datetime.datetime.now(datetime.timezone.utc)
+        })
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # --- 2. トレーニング記録 ---
 @app.route('/log_training', methods=['POST'])
 def log_training():
@@ -108,7 +131,6 @@ def log_training():
         data = request.json
         duration = data.get('duration')
         user_name = data.get('user_name', '名無しさん')
-        # ★追加: メモを受け取る
         memo = data.get('memo', '')
 
         if not duration: return jsonify({'error': '時間なし'}), 400
@@ -116,7 +138,7 @@ def log_training():
         db.collection('activities').add({
             'type': 'training',
             'user_name': user_name,
-            'memo': memo, # ★追加: メモを保存
+            'memo': memo,
             'duration': duration,
             'timestamp': datetime.datetime.now(datetime.timezone.utc)
         })
@@ -141,10 +163,7 @@ def get_activities():
                 jst_timestamp = data['timestamp'].astimezone(datetime.timezone(datetime.timedelta(hours=9)))
                 data['timestamp_str'] = jst_timestamp.strftime('%Y年%m月%d日 %H:%M')
             
-            # メモがない古いデータのために空文字を入れておく
-            if 'memo' not in data:
-                data['memo'] = ''
-
+            if 'memo' not in data: data['memo'] = ''
             activities.append(data)
         return jsonify(activities)
     except Exception as e:

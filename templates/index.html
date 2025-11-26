@@ -1,13 +1,13 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>トレーニング共有アプリ</title>
     
-    <script src="[https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js](https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js)"></script>
-    <script src="[https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js](https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js)"></script>
-    <script src="[https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js](https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js)"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
     <style>
         body {
@@ -44,9 +44,12 @@
         #timelineList { list-style: none; padding: 0; }
         #timelineList li { background: #fff; border-bottom: 1px solid #eee; padding: 15px 10px; }
         .user-name { color: #3498db; font-weight: bold; font-size: 0.9em; }
-        .memo-text { font-weight: bold; color: #333; margin: 5px 0; display: block; } /* メモのスタイル */
+        .memo-text { font-weight: bold; color: #333; margin: 5px 0; display: block; }
         strong { color: #2ecc71; }
         small { color: #888; display: block; margin-top: 5px; font-size: 0.85em;}
+        
+        /* グループパスワード用のスタイル */
+        #groupPassInput { border: 2px solid #f1c40f; background-color: #fffcf0; }
     </style>
 </head>
 <body>
@@ -57,6 +60,9 @@
                 <h3>ログイン / 新規登録</h3>
                 <input type="email" id="emailInput" placeholder="メールアドレス">
                 <input type="password" id="passwordInput" placeholder="パスワード">
+                
+                <input type="password" id="groupPassInput" placeholder="グループパスワード（新規登録時のみ）">
+                
                 <button id="emailLoginButton">ログイン</button>
                 <button id="emailRegisterButton">新規登録</button>
             </div>
@@ -77,7 +83,7 @@
         <h2>食事の記録 🍽️</h2>
         <form id="foodForm">
             <p>食事の写真をアップロード</p>
-            <input type="text" id="foodMemo" placeholder="メモ（例: 鶏むね肉のサラダ）">
+            <input type="text" id="foodMemo" placeholder="メモ（例: プロテインのみ）">
             <input type="file" id="foodImage" accept="image/*">
             <button type="submit">送信</button>
         </form>
@@ -110,6 +116,8 @@
         const passwordInput = document.getElementById('passwordInput');
         const emailLoginButton = document.getElementById('emailLoginButton');
         const emailRegisterButton = document.getElementById('emailRegisterButton');
+        const groupPassInput = document.getElementById('groupPassInput'); // ★追加
+
         const userInfo = document.getElementById('userInfo');
         const userName = document.getElementById('userName');
         const logoutButton = document.getElementById('logoutButton');
@@ -118,13 +126,12 @@
 
         const foodForm = document.getElementById('foodForm');
         const foodImageInput = document.getElementById('foodImage');
-        const foodMemoInput = document.getElementById('foodMemo'); // ★追加
+        const foodMemoInput = document.getElementById('foodMemo');
         const foodResultElement = document.getElementById('foodResult');
         
         const timelineList = document.getElementById('timelineList');
-        
         const timerElement = document.getElementById('timer');
-        const trainingMemoInput = document.getElementById('trainingMemo'); // ★追加
+        const trainingMemoInput = document.getElementById('trainingMemo');
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const resultElement = document.getElementById('result');
@@ -144,18 +151,39 @@
         const auth = firebase.auth();
         const db_js = firebase.firestore();
 
-        // 認証関連
+        // ★修正: 新規登録ボタンの処理
         emailRegisterButton.addEventListener('click', () => {
-            const email = emailInput.value; const password = passwordInput.value;
-            if(!email || !password) return alert('入力してください');
-            auth.createUserWithEmailAndPassword(email, password).catch(e => alert(e.message));
+            const email = emailInput.value; 
+            const password = passwordInput.value;
+            const groupPass = groupPassInput.value; // 入力されたグループパスワード
+
+            if(!email || !password) return alert('メールアドレスとパスワードを入力してください');
+            
+            // ★ここでパスワードチェック！
+            if(groupPass !== '4163') {
+                return alert('グループパスワードが違います！\nこのアプリは仲間専用です。');
+            }
+
+            auth.createUserWithEmailAndPassword(email, password)
+                .then((cred) => {
+                    console.log('登録成功');
+                    alert('ようこそ！登録が完了しました！');
+                })
+                .catch((e) => alert('登録失敗: ' + e.message));
         });
+
+        // ログインボタン (こちらはグループパスワード不要)
         emailLoginButton.addEventListener('click', () => {
-            const email = emailInput.value; const password = passwordInput.value;
+            const email = emailInput.value; 
+            const password = passwordInput.value;
             if(!email || !password) return alert('入力してください');
-            auth.signInWithEmailAndPassword(email, password).catch(e => alert(e.message));
+            auth.signInWithEmailAndPassword(email, password)
+                .then((cred) => console.log('ログイン成功'))
+                .catch((e) => alert('ログイン失敗: ' + e.message));
         });
+
         logoutButton.addEventListener('click', () => auth.signOut());
+        
         updateProfileButton.addEventListener('click', () => {
             const newName = nicknameInput.value;
             if(auth.currentUser && newName) {
@@ -163,6 +191,7 @@
                     .then(() => { alert('更新しました'); userName.textContent = newName; });
             }
         });
+
         auth.onAuthStateChanged((user) => {
             if (user) {
                 loginForm.style.display = 'none'; userInfo.style.display = 'block';
@@ -182,14 +211,17 @@
                 timelineList.innerHTML = ''; 
                 activities.forEach(activity => {
                     const name = activity.user_name || '名無しさん';
-                    // ★追加: メモがあれば表示する
                     const memo = activity.memo ? `<span class="memo-text">「${activity.memo}」</span>` : '';
                     
                     const li = document.createElement('li');
                     let content = `<div class="user-name">${name}</div>`;
                     
                     if (activity.type === 'food') {
-                        content += `<strong>【食事】</strong> ${memo} ${activity.calories} / ${activity.pfc}`;
+                        if (activity.calories === '---') {
+                            content += `<strong>【食事メモ】</strong> ${memo}`;
+                        } else {
+                            content += `<strong>【食事】</strong> ${memo} ${activity.calories} / ${activity.pfc}`;
+                        }
                     } else if (activity.type === 'training') {
                         content += `<strong>【トレーニング】</strong> ${memo} ${activity.duration}`;
                     }
@@ -204,23 +236,40 @@
         foodForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const file = foodImageInput.files[0];
-            if (!file) return;
+            const memo = foodMemoInput.value;
             const user = auth.currentUser;
             if (!user) return alert('ログインしてください');
+
+            if (!file && !memo) return alert('写真またはメモを入力してください');
+
+            if (!file) {
+                try {
+                    await fetch('/log_food_text', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            'user_name': user.displayName || user.email,
+                            'memo': memo 
+                        })
+                    });
+                    foodMemoInput.value = '';
+                    loadActivities();
+                } catch (err) { console.error(err); }
+                return;
+            }
 
             foodResultElement.textContent = 'AI分析中...';
             const formData = new FormData();
             formData.append('image', file);
             formData.append('user_name', user.displayName || user.email);
-            // ★追加: メモを送る
-            formData.append('memo', foodMemoInput.value);
+            formData.append('memo', memo);
 
             try {
                 const res = await fetch('/analyze', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
                     foodResultElement.innerHTML = `記録完了: ${data.calories}`;
-                    foodMemoInput.value = ''; // 入力欄を空にする
+                    foodMemoInput.value = '';
                     foodImageInput.value = '';
                     loadActivities();
                 } else { foodResultElement.textContent = 'エラー: ' + data.error; }
@@ -254,12 +303,11 @@
                     body: JSON.stringify({ 
                         'duration': formattedTime,
                         'user_name': user.displayName || user.email,
-                        // ★追加: メモを送る
                         'memo': trainingMemoInput.value
                     })
                 });
                 loadActivities();
-                trainingMemoInput.value = ''; // 入力欄を空にする
+                trainingMemoInput.value = '';
             } catch (err) { console.error(err); }
             resultElement.textContent = `お疲れ様！ 時間: ${formattedTime}`;
         });
